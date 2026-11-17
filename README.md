@@ -1,0 +1,197 @@
+# AgroPulse NG
+
+A Growthly Nexus Solutions Limited data product: continuously animated,
+**observed** (not forecast) weather telemetry across 24 Nigerian agricultural
+clusters, refreshed nightly at exactly 22:00 WAT (GMT+1). Built to run
+entirely on free tiers — Vercel Hobby, Supabase Free, GitHub Actions, and the
+Google Gemini API free tier.
+
+## Who this is for
+
+AgroPulse NG is **Growthly's internal agro-climate intelligence layer**, not
+a public weather destination competing with NiMet, FAO GIEWS, or CHIRPS for
+organic traffic. A standalone dashboard of raw telemetry has no reason to
+win that fight: those institutions have statutory authority, synoptic
+station networks, and decades of trust that an unbranded weather site
+cannot out-market.
+
+Its real value is upstream of that: as the data layer behind what Growthly
+already sells —
+
+- **Bid differentiation** — a concrete, demoable "intelligence layer" asset
+  to point to in BDSP/delivery-aggregator proposals (e.g. the Green RISE
+  Africa bid), where competing proposals have no comparable data product.
+- **Program and client briefings** — the per-cluster briefing card (below)
+  drops straight into a funder report, a cohort update, or a client email,
+  with deterministic, citable risk flags rather than a vague weather
+  summary.
+- **Research raw material** — the same telemetry that feeds Growthly's
+  Resilience & Resourcefulness studies and agricultural data-productization
+  work, without re-keying anything by hand.
+
+One important honesty note: for most of these 24 clusters, Open-Meteo's
+"observed" data is a reanalysis/short-range model product (ERA5 / ERA5-Land
+/ ECMWF IFS, blended against whatever stations exist nearby), not raw
+synoptic station telemetry. It's a meaningful step up from a forecast, but
+it isn't the same evidentiary weight as NiMet's own instrument readings —
+phrase claims to funders/clients as "model-verified observed conditions,"
+not "station-measured."
+
+## What's in it
+
+- **Live dashboard:** 7 animated graphs per cluster — rainfall, humidity,
+  wind speed, average/max/min temperature, and sunshine hours — with a
+  diurnal 00:00→21:00 WAT playback scrubber, responsive from phone to desktop.
+- **Deterministic agronomic risk flags:** fixed-threshold rules (not the AI)
+  compute per-cluster flags each night — heavy rainfall, drying/spoilage
+  risk, heat stress, high wind — from that night's own totals. See
+  `computeRiskFlags()` in `src/lib/ingest-logic.ts`. These are a first-pass
+  heuristic model, not agronomically calibrated per crop; recalibrate the
+  named threshold constants with Growthly's own agronomic input before
+  citing them as authoritative.
+- **Per-cluster briefing card:** a branded 1200×630 PNG (`/api/brief-card/
+  [slug]`), built with `next/og` at zero added infrastructure, for dropping
+  into a bid, report, or email — see the "Download briefing card" button on
+  the dashboard.
+- **AI observational brief:** Gemini 2.5 Flash (free tier) reads the night's
+  verified telemetry and the deterministic flags, and writes a grounded,
+  non-speculative summary plus an "Ask the analyst" Q&A drawer, strictly
+  scoped to that data and instructed to stay consistent with the flags
+  rather than inventing its own risk claims.
+- **Exact nightly schedule:** a GitHub Actions cron (not Vercel's jittery
+  Hobby-plan cron) calls `/api/ingest` at 21:00 UTC / 22:00 WAT every night.
+
+## Roadmap (deliberately deferred, not in this build)
+
+These were considered and explicitly scoped out of this phase, since the
+primary user is Growthly's own B2B pipeline, not a mass public audience:
+
+- **Public push channels** (Telegram broadcast channel, WhatsApp share
+  links/Business API) — a real option if/when a public or cooperative/
+  extension-agent audience becomes the goal; the Telegram route is free and
+  needs no Meta verification, WhatsApp Business API does.
+- **Feeding Growthly's public weekly insights series** — kept out for now,
+  by request; revisit if AgroPulse NG's audience becomes public-facing.
+- **Market-price crossing** (pairing weather risk flags with Nigerian grain
+  prices) — the real moat identified in product review, but genuinely
+  harder: no live price API exists; the realistic path is a periodic CSV
+  pull from the World Bank's Real Time Food Prices dataset or NBS's
+  crowdsourced High Frequency Prices dataset, ingested on a weekly/monthly
+  cadence and manually mapped to the nearest cluster.
+- **Multi-day streak detection** (e.g. "3 consecutive drying-risk days") —
+  the risk-flag engine currently looks at one elapsed day at a time; a true
+  streak detector needs several nights of accumulated history.
+- **Researcher CSV/Excel export** — a 1-click multi-cluster historical
+  accumulation export, useful once there's accumulated history worth
+  exporting.
+
+See [`SECURITY.md`](./SECURITY.md) for the threat model, hardening measures,
+and the automated test suite that exercises them.
+
+## Architecture
+
+```
+agropulse-ng/
+├── .github/workflows/nightly-ingest.yml   # Exact 22:00 WAT cron trigger
+├── supabase/schema.sql                    # Tables, RLS policies, 24-cluster seed data
+├── src/
+│   ├── app/
+│   │   ├── api/ingest/route.ts            # Nightly: fetch Open-Meteo -> flags -> Gemini -> Supabase
+│   │   ├── api/chat/route.ts              # "Ask the analyst" Q&A endpoint
+│   │   ├── api/brief-card/[slug]/route.tsx # Branded PNG briefing card (next/og)
+│   │   ├── page.tsx, layout.tsx
+│   ├── components/
+│   │   ├── AgroPulseLogo.tsx              # Brand mark (Growthly teal/mint)
+│   │   ├── AgroPulseDashboard.tsx         # Responsive 7-graph dashboard
+│   │   └── AgentBriefPanel.tsx            # AI synthesis + Q&A drawer
+│   ├── hooks/use-analyst-chat.ts
+│   └── lib/                               # env validation, Supabase clients,
+│                                           # rate limiting, pure ingest/chat logic
+└── tests/                                 # vitest — see SECURITY.md
+```
+
+## Step-by-step deployment guide
+
+### Step 1 — Provision Supabase (Free tier)
+
+1. Create a new project in Supabase (pick the region closest to Nigeria,
+   e.g. `eu-west-1` or `eu-central-1`, for the lowest latency).
+2. Open **SQL Editor** → paste and run the entire contents of
+   [`supabase/schema.sql`](./supabase/schema.sql). This creates the three
+   tables, enables Row-Level Security with public-read-only policies, and
+   seeds all 24 agricultural clusters.
+3. Go to **Database → Replication** (or **Table Editor → daily_observed_reports
+   → Enable Realtime**) so the dashboard updates live at 22:00 WAT without a
+   page reload.
+4. Copy three values from **Project Settings → API**:
+   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
+   - `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (**server secret — never
+     expose this to the browser**)
+
+### Step 2 — Obtain a free Google Gemini API key
+
+1. Go to [Google AI Studio](https://aistudio.google.com) → **Get API Key** →
+   **Create API key**.
+2. Save it as `GOOGLE_GENERATIVE_AI_API_KEY` (free tier for `gemini-2.5-flash`,
+   no billing card required).
+
+### Step 3 — Local setup & push to GitHub
+
+```bash
+cp .env.example .env.local   # then fill in the four values above, plus CRON_SECRET
+openssl rand -hex 32         # generates a strong value for CRON_SECRET
+
+npm install
+npm run build                # sanity check before pushing
+npm run test                 # runs the security/idempotency suite — see SECURITY.md
+
+git init
+git add .
+git commit -m "Initial AgroPulse NG deployment"
+gh repo create agropulse-ng --private --source=. --push
+# or: create an empty repo on github.com and `git remote add origin ... && git push -u origin main`
+```
+
+### Step 4 — Deploy to Vercel (Free Hobby plan)
+
+1. **Vercel Dashboard → Add New Project** → import the `agropulse-ng` repo.
+2. Under **Environment Variables**, add all five:
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `CRON_SECRET`.
+3. Click **Deploy** and copy the production domain, e.g.
+   `https://agropulse-ng.vercel.app`.
+
+### Step 5 — Activate the 22:00 WAT GitHub Actions cron
+
+1. In the GitHub repo: **Settings → Secrets and variables → Actions → New
+   repository secret**, and add:
+   - `VERCEL_APP_URL` — your Vercel domain, **no trailing slash**
+   - `CRON_SECRET` — the exact same value you set in Vercel
+2. Go to the **Actions** tab → **Nightly 2200 WAT Observed Weather
+   Ingestion** → **Run workflow** to populate today's telemetry immediately.
+   From then on it runs automatically every night at 21:00 UTC (22:00 WAT).
+
+## Local development
+
+```bash
+npm run dev     # http://localhost:3000
+npm run build   # production build / type-check
+npm run test    # vitest suite (see SECURITY.md)
+npm run lint
+```
+
+To test the ingest route locally without waiting for the nightly cron:
+
+```bash
+curl -X POST http://localhost:3000/api/ingest \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+## Brand
+
+AgroPulse NG is a Growthly Nexus Solutions Limited data product. The UI uses
+Growthly's own brand palette — teal `#005a5a`, mint `#93e9be`, white, pale
+mint `#d4f6e5`, and soft grey-green `#e0ebeb` — defined once as CSS custom
+properties in `src/app/globals.css` and as Tailwind v4 theme tokens
+(`bg-brand-teal`, `text-brand-ink`, etc.) throughout the components.
