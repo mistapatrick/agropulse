@@ -133,7 +133,7 @@ agropulse-ng/
 
 1. Go to [Google AI Studio](https://aistudio.google.com) → **Get API Key** →
    **Create API key**.
-2. Save it as `GOOGLE_GENERATIVE_AI_API_KEY` (free tier for `gemini-2.5-flash`,
+2. Save it as `GOOGLE_GENERATIVE_AI_API_KEY` (free tier for `gemini-3.5-flash`,
    no billing card required).
 
 ### Step 3 — Local setup & push to GitHub
@@ -171,6 +171,38 @@ gh repo create agropulse-ng --private --source=. --push
 2. Go to the **Actions** tab → **Nightly 2200 WAT Observed Weather
    Ingestion** → **Run workflow** to populate today's telemetry immediately.
    From then on it runs automatically every night at 21:00 UTC (22:00 WAT).
+
+## Troubleshooting
+
+**`/api/ingest` returns 422 ("No elapsed observation hours to ingest yet for
+this date")** — Normal if you run it in the first minute or two of a new WAT
+calendar day and the Open-Meteo response for today hasn't propagated yet.
+Re-run the workflow a few minutes later. If it happens at every hour of the
+day, the Open-Meteo request window itself is wrong — see
+`buildOpenMeteoUrl` in `src/lib/ingest-logic.ts`, which must request
+`forecast_days=1` (not `0`) or the API never returns today's date at all.
+
+**`/api/ingest` returns 500 ("Database write failed")** — The client-facing
+message is deliberately generic; the real Postgres/Supabase error is in
+Vercel's function logs (Project → Logs → find the `/api/ingest` call →
+expand the `[ingest] hourly upsert failed:` line). The two most common
+causes on a first deploy: `supabase/schema.sql` was never fully run in the
+Supabase SQL Editor (so `observed_hourly` doesn't exist), or
+`SUPABASE_SERVICE_ROLE_KEY` in Vercel is actually the anon/public key
+instead of the service-role key.
+
+**The nightly AI brief shows "the AI synthesis step did not complete," or
+the in-app analyst chat says "temporarily unavailable"** — The ingestion and
+dashboard data are unaffected (that's a deliberate graceful degradation),
+but check Vercel's function logs for `[ingest] AI synthesis failed:` or
+`[chat] AI generation failed:`. Google retires specific Gemini model IDs on
+a published schedule
+([ai.google.dev/gemini-api/docs/deprecations](https://ai.google.dev/gemini-api/docs/deprecations)),
+after which calls to that ID return `404 NOT_FOUND` — this project hit that
+exact wall when `gemini-2.5-flash` was retired. If the log shows a 404 for
+the model, bump the model string (currently `gemini-3.5-flash`) in both
+`src/app/api/ingest/route.ts` and `src/app/api/chat/route.ts` to whatever
+Google's deprecations page currently lists as the stable replacement.
 
 ## Local development
 

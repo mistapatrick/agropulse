@@ -117,12 +117,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Database write failed" }, { status: 500 });
   }
 
-  // 6. Generate a grounded observational summary via the free Gemini 2.5 Flash tier.
+  // 6. Generate a grounded observational summary via the free Gemini 3.5 Flash tier.
   const compactTelemetry = buildCompactTelemetry(clusterMetrics);
   let aiBrief: z.infer<typeof AgentReportSchema>;
   try {
     const result = await generateObject({
-      model: google("gemini-2.5-flash"),
+      model: google("gemini-3.5-flash"),
       schema: AgentReportSchema,
       prompt: buildAiPrompt(obsDate, cutoffHour, compactTelemetry),
       abortSignal: AbortSignal.timeout(40_000),

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: google("gemini-3.5-flash"),
       system: systemPrompt,
       messages: [
         ...history.map((h) => ({ role: h.role, content: h.content }) as const),
