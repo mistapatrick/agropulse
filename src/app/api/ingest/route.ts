@@ -67,8 +67,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Cluster query failed" }, { status: 500 });
   }
 
-  // 3. Single batched Open-Meteo observational request (forecast_days=0 means
-  //    zero forecast rows — this is strictly experienced/observed data).
+  // 3. Single batched Open-Meteo request. forecast_days=1 is needed just to
+  //    get today's date back from the API at all; "strictly observed, never
+  //    forecast" is enforced below by the hour-cutoff filter, not by this flag.
   const url = buildOpenMeteoUrl(clusters as ClusterRow[]);
   let omRes: Response;
   try {

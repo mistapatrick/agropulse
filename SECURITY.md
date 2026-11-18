@@ -9,7 +9,7 @@ to close it, and which automated test proves the closure holds — not just
 that the code "should" be safe by construction.
 
 Run the full suite with `npm run test` (or `npx vitest run`). Current state:
-**6 test files, 71 tests, all passing.**
+**6 test files, 73 tests, all passing.**
 
 `/api/brief-card/[slug]` (the branded PNG export used for bids and client
 briefings) is intentionally public and unauthenticated: it reads the exact

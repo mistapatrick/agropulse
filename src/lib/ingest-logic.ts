@@ -46,10 +46,20 @@ export function getCutoffHour(currentHour: number): number {
 export function buildOpenMeteoUrl(clusters: ClusterRow[]): string {
   const lats = clusters.map((c) => c.latitude).join(",");
   const lons = clusters.map((c) => c.longitude).join(",");
+  // forecast_days=1 is required to get TODAY's date in the response at all —
+  // forecast_days counts from today forward, so forecast_days=0 returns zero
+  // days starting from today (confirmed against Open-Meteo: with past_days=1
+  // &forecast_days=0 the hourly.time array contains only yesterday's 24 hours,
+  // never today's). The "never ingest an hour that hasn't elapsed yet"
+  // guarantee does NOT come from forecast_days — it comes from the
+  // `hour > cutoffHour` filter in parseIngestionResults, which already
+  // discards every not-yet-elapsed hour of today regardless of how many
+  // forecast hours the API hands back. past_days=1 is kept as a one-day
+  // backfill margin (covers a run that's late or re-run the next morning).
   return (
     `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}` +
     `&hourly=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,sunshine_duration` +
-    `&timezone=Africa%2FLagos&past_days=1&forecast_days=0`
+    `&timezone=Africa%2FLagos&past_days=1&forecast_days=1`
   );
 }
 
