@@ -7,7 +7,12 @@ import { ChatRequestSchema, buildChatSystemPrompt } from "@/lib/chat-logic";
 import type { DailyObservedReport } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// 60s is the Vercel Hobby plan's maxDuration ceiling. The AI call below gets
+// a 40s budget (same as the ingest route's Gemini call), leaving ~20s of
+// headroom for the Supabase read, JSON parsing and response write — the
+// previous 30s/20s pairing left only ~10s of headroom and was observed in
+// production to trip the 20s AbortSignal under normal Gemini latency.
+export const maxDuration = 60;
 
 const RATE_LIMIT = { limit: 10, windowMs: 60_000 }; // 10 requests / minute / client
 
@@ -65,7 +70,7 @@ export async function POST(req: NextRequest) {
         ...history.map((h) => ({ role: h.role, content: h.content }) as const),
         { role: "user" as const, content: message },
       ],
-      abortSignal: AbortSignal.timeout(20_000),
+      abortSignal: AbortSignal.timeout(40_000),
     });
 
     return NextResponse.json({ reply: result.text });
