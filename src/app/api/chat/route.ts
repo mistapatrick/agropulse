@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
+import { withGeminiFallback } from "@/lib/ai-models";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { checkRateLimit, getClientKey } from "@/lib/rate-limit";
 import { ChatRequestSchema, buildChatSystemPrompt } from "@/lib/chat-logic";
@@ -63,15 +63,17 @@ export async function POST(req: NextRequest) {
   const systemPrompt = buildChatSystemPrompt(report as DailyObservedReport | null);
 
   try {
-    const result = await generateText({
-      model: google("gemini-3.5-flash"),
-      system: systemPrompt,
-      messages: [
-        ...history.map((h) => ({ role: h.role, content: h.content }) as const),
-        { role: "user" as const, content: message },
-      ],
-      abortSignal: AbortSignal.timeout(40_000),
-    });
+    const result = await withGeminiFallback((model) =>
+      generateText({
+        model,
+        system: systemPrompt,
+        messages: [
+          ...history.map((h) => ({ role: h.role, content: h.content }) as const),
+          { role: "user" as const, content: message },
+        ],
+        abortSignal: AbortSignal.timeout(40_000),
+      })
+    );
 
     return NextResponse.json({ reply: result.text });
   } catch (err) {

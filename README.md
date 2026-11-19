@@ -133,7 +133,8 @@ agropulse-ng/
 
 1. Go to [Google AI Studio](https://aistudio.google.com) → **Get API Key** →
    **Create API key**.
-2. Save it as `GOOGLE_GENERATIVE_AI_API_KEY` (free tier for `gemini-3.5-flash`,
+2. Save it as `GOOGLE_GENERATIVE_AI_API_KEY` (free tier for the
+   `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` models this app uses,
    no billing card required).
 
 ### Step 3 — Local setup & push to GitHub
@@ -200,9 +201,42 @@ a published schedule
 ([ai.google.dev/gemini-api/docs/deprecations](https://ai.google.dev/gemini-api/docs/deprecations)),
 after which calls to that ID return `404 NOT_FOUND` — this project hit that
 exact wall when `gemini-2.5-flash` was retired. If the log shows a 404 for
-the model, bump the model string (currently `gemini-3.5-flash`) in both
-`src/app/api/ingest/route.ts` and `src/app/api/chat/route.ts` to whatever
-Google's deprecations page currently lists as the stable replacement.
+the model, bump the model list in `src/lib/ai-models.ts`
+(`GEMINI_FALLBACK_CHAIN`, currently `gemini-3.5-flash-lite` then
+`gemini-3.1-flash-lite`) to whatever Google's deprecations page currently
+lists as the stable replacement — both `src/app/api/ingest/route.ts` and
+`src/app/api/chat/route.ts` pick up the change automatically since they
+both call through `withGeminiFallback`.
+
+If instead the log shows `[chat] AI generation failed: [Error [TimeoutError]:
+The operation was aborted due to timeout]`, that's not a dead model, it's
+Gemini taking longer than the route's own abort budget to respond (free-tier
+latency varies). The chat route gives it 40s against a 60s `maxDuration`
+(Vercel's Hobby-plan ceiling); if it's still tripping, that's a sign of
+sustained free-tier slowness or rate limiting rather than a one-off, and
+worth checking your quota at
+[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
+
+**The log shows `[Error [AI_RetryError]: Failed after 3 attempts. Last
+error: AI_APICallError: This model is currently experiencing high demand.]`**
+— This is Google's own capacity signal (`503 UNAVAILABLE`), not a bug on
+either side: the specific model's shared capacity pool is temporarily
+saturated. Both routes already call through `withGeminiFallback`
+(`src/lib/ai-models.ts`), which retries a 503/429/5xx/timeout against a
+second model (`gemini-3.1-flash-lite`) from a different capacity pool before
+giving up, so a single transient spike shouldn't surface to the user at all.
+If both models in the chain are failing together, that's a broader Gemini
+API incident — check
+[Google's AI Studio status](https://aistudio.google.com) or try again in a
+few minutes; this isn't something a code change can route around.
+
+Why `gemini-3.5-flash-lite` and not the newer `gemini-3.8-flash`: on the
+free tier, Google's standard Flash models (3.5/3.8/etc.) are capped around
+**20 requests/day**, while the Flash-Lite tier gets roughly **500/day**.
+Given a nightly ingest run plus ad-hoc "Ask the analyst" testing, a 20/day
+budget is exhausted easily; Flash-Lite leaves real headroom. Check your
+project's exact current limits at
+[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
 
 ## Local development
 

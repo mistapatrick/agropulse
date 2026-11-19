@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { google } from "@ai-sdk/google";
+import { withGeminiFallback } from "@/lib/ai-models";
 import { z } from "zod";
 import { getServerEnv } from "@/lib/env.server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -117,16 +117,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Database write failed" }, { status: 500 });
   }
 
-  // 6. Generate a grounded observational summary via the free Gemini 3.5 Flash tier.
+  // 6. Generate a grounded observational summary via the free Gemini Flash-Lite
+  //    tier (primary gemini-3.5-flash-lite, falling back to gemini-3.1-flash-lite
+  //    on a retryable error — see src/lib/ai-models.ts for why Flash-Lite,
+  //    not plain Flash, is the free-tier-appropriate choice here).
   const compactTelemetry = buildCompactTelemetry(clusterMetrics);
   let aiBrief: z.infer<typeof AgentReportSchema>;
   try {
-    const result = await generateObject({
-      model: google("gemini-3.5-flash"),
-      schema: AgentReportSchema,
-      prompt: buildAiPrompt(obsDate, cutoffHour, compactTelemetry),
-      abortSignal: AbortSignal.timeout(40_000),
-    });
+    const result = await withGeminiFallback((model) =>
+      generateObject({
+        model,
+        schema: AgentReportSchema,
+        prompt: buildAiPrompt(obsDate, cutoffHour, compactTelemetry),
+        abortSignal: AbortSignal.timeout(40_000),
+      })
+    );
     aiBrief = result.object;
   } catch (err) {
     console.error("[ingest] AI synthesis failed:", err);
