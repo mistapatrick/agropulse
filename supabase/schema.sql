@@ -39,7 +39,7 @@ create table if not exists public.weather_clusters (
   longitude double precision not null check (longitude between -180 and 180)
 );
 
--- 2. Hourly experienced/observed telemetry (00:00 to 21:00 WAT)
+-- 2. Hourly experienced/observed telemetry (00:00 to 23:00 WAT, full day)
 create table if not exists public.observed_hourly (
   id bigint generated always as identity primary key,
   cluster_id int not null references public.weather_clusters (id) on delete cascade,
@@ -57,11 +57,11 @@ create table if not exists public.observed_hourly (
 create index if not exists observed_hourly_obs_date_idx
   on public.observed_hourly (obs_date);
 
--- 3. Daily observed summary & AI agro-met brief (updated nightly at 22:00 WAT)
+-- 3. Daily observed summary & AI agro-met brief (updated nightly at 23:59 WAT)
 create table if not exists public.daily_observed_reports (
   id bigint generated always as identity primary key,
   obs_date date unique not null,
-  cutoff_hour_wat int not null default 21 check (cutoff_hour_wat between 0 and 21),
+  cutoff_hour_wat int not null default 23 check (cutoff_hour_wat between 0 and 23),
   national_summary text not null,
   regional_insights jsonb not null,
   cluster_metrics jsonb not null,
@@ -128,4 +128,4 @@ on conflict (slug) do nothing;
 -- Realtime: after running this file, also enable Realtime for
 -- public.daily_observed_reports in Supabase Dashboard -> Database ->
 -- Replication (or Table Editor -> daily_observed_reports -> Enable Realtime)
--- so open browser tabs refresh live at 22:00 WAT without a page reload.
+-- so open browser tabs refresh live at 23:59 WAT without a page reload.

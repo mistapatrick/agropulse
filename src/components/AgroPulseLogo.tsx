@@ -64,7 +64,7 @@ export function AgroPulseLogo({ className = "h-9 w-auto" }: { className?: string
           </span>
         </div>
         <span className="text-[10px] sm:text-[11px] font-medium text-brand-ink-soft tracking-wide mt-0.5">
-          22:00 WAT Observed Telemetry
+          23:59 WAT Observed Telemetry
         </span>
       </div>
     </div>

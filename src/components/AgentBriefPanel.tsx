@@ -29,12 +29,12 @@ export function AgentBriefPanel({ report }: { report: DailyObservedReport | null
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-brand-teal" />
         <span className="text-xs font-bold uppercase tracking-wider text-brand-teal">
-          AI Observational Synthesis (22:00 WAT)
+          AI Observational Synthesis (23:59 WAT)
         </span>
       </div>
 
       <p className="mt-2 text-sm leading-relaxed text-brand-ink">
-        {report?.national_summary ?? "Awaiting the next 22:00 WAT ingestion run."}
+        {report?.national_summary ?? "Awaiting the next 23:59 WAT ingestion run."}
       </p>
 
       <button

@@ -72,16 +72,21 @@ describe("getLagosDateParts / getCutoffHour", () => {
     expect(currentHour).toBe(0);
   });
 
-  it("never returns a cutoff hour above 21, even well past 22:00 WAT", () => {
-    expect(getCutoffHour(22)).toBe(21);
-    expect(getCutoffHour(23)).toBe(21);
+  it("returns the full day — hour 23 — once the 23:59 WAT run has it", () => {
+    expect(getCutoffHour(23)).toBe(23);
+  });
+
+  it("defensively clamps an out-of-range hour value to 23, the last hour of the day", () => {
+    // getLagosDateParts() never actually produces an hour above 23, but the
+    // clamp is kept as a defensive guard against a misbehaving caller.
+    expect(getCutoffHour(25)).toBe(23);
   });
 
   it("clamps a negative hour to 0 defensively", () => {
     expect(getCutoffHour(-5)).toBe(0);
   });
 
-  it("passes through hours within the valid 0-21 range unchanged (manual daytime backfill runs)", () => {
+  it("passes through hours within the valid 0-23 range unchanged (manual daytime backfill runs)", () => {
     expect(getCutoffHour(9)).toBe(9);
   });
 });
@@ -91,8 +96,31 @@ describe("buildOpenMeteoUrl", () => {
     const url = buildOpenMeteoUrl(CLUSTERS);
     expect(url).toContain("latitude=6.4512,11.6442");
     expect(url).toContain("longitude=6.9124,8.4319");
-    expect(url).toContain("forecast_days=0"); // zero forecast rows — observed only
+    // forecast_days=1 is required so the API returns TODAY's date at all —
+    // forecast_days counts days starting from today, so 0 would return only
+    // past_days and never today. "Observed only" is enforced separately by
+    // the hour-cutoff filter in parseIngestionResults, not by this flag.
+    expect(url).toContain("forecast_days=1");
+    expect(url).toContain("past_days=1");
     expect(url).toContain("sunshine_duration");
+  });
+});
+
+describe("parseIngestionResults never includes today's date from a stale/past-only response", () => {
+  it("returns zero hourlyRows if the API response only covers yesterday (regression: forecast_days=0 bug)", () => {
+    // Simulates the exact production bug: an Open-Meteo response built with
+    // forecast_days=0 only ever contains yesterday's 24 hours, never today's
+    // — so no row can ever match obsDate, whatever the cutoff hour is.
+    const staleResponse = [loc(makeHourlyBlock("2026-11-17", 24))];
+    const { hourlyRows } = parseIngestionResults(staleResponse, [CLUSTERS[0]], "2026-11-18", 21);
+    expect(hourlyRows).toHaveLength(0);
+  });
+
+  it("returns the elapsed hours when the response correctly includes obsDate (forecast_days=1 fix)", () => {
+    const freshResponse = [loc(makeHourlyBlock("2026-11-18", 3))]; // hours 00, 01, 02
+    // currentHour=1 at the moment of a very-early-morning manual trigger.
+    const { hourlyRows } = parseIngestionResults(freshResponse, [CLUSTERS[0]], "2026-11-18", 1);
+    expect(hourlyRows).toHaveLength(2); // hours 00 and 01 only, never hour 02
   });
 });
 
@@ -108,6 +136,20 @@ describe("parseIngestionResults", () => {
     expect(hourlyRows.every((r) => r.obs_hour <= 21)).toBe(true);
     // 22 hours (00:00..21:00) per cluster x 2 clusters
     expect(hourlyRows.length).toBe(22 * 2);
+  });
+
+  it("ingests the full day including hour 23, now that the nightly run fires at 23:59 WAT (regression: hours 22-23 were structurally unreachable under the old 22:00 WAT / cutoff-21 schedule)", () => {
+    const obsDate = "2026-03-10";
+    const raw = [loc(makeHourlyBlock(obsDate, 24)), loc(makeHourlyBlock(obsDate, 24))];
+    const parsed = OpenMeteoResponseSchema.parse(raw);
+    const { hourlyRows } = parseIngestionResults(parsed, CLUSTERS, obsDate, 23);
+
+    const maxHourIngested = Math.max(...hourlyRows.map((r) => r.obs_hour));
+    expect(maxHourIngested).toBe(23);
+    expect(hourlyRows.some((r) => r.obs_hour === 22)).toBe(true);
+    expect(hourlyRows.some((r) => r.obs_hour === 23)).toBe(true);
+    // 24 hours (00:00..23:00) per cluster x 2 clusters
+    expect(hourlyRows.length).toBe(24 * 2);
   });
 
   it("discards hours from a different date (e.g. yesterday, included via past_days=1)", () => {

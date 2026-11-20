@@ -2,7 +2,7 @@
 
 A Growthly Nexus Solutions Limited data product: continuously animated,
 **observed** (not forecast) weather telemetry across 24 Nigerian agricultural
-clusters, refreshed nightly at exactly 22:00 WAT (GMT+1). Built to run
+clusters, refreshed nightly at exactly 23:59 WAT (GMT+1). Built to run
 entirely on free tiers — Vercel Hobby, Supabase Free, GitHub Actions, and the
 Google Gemini API free tier.
 
@@ -41,7 +41,7 @@ not "station-measured."
 
 - **Live dashboard:** 7 animated graphs per cluster — rainfall, humidity,
   wind speed, average/max/min temperature, and sunshine hours — with a
-  diurnal 00:00→21:00 WAT playback scrubber, responsive from phone to desktop.
+  diurnal 00:00→23:00 WAT playback scrubber, responsive from phone to desktop.
 - **Deterministic agronomic risk flags:** fixed-threshold rules (not the AI)
   compute per-cluster flags each night — heavy rainfall, drying/spoilage
   risk, heat stress, high wind — from that night's own totals. See
@@ -53,13 +53,24 @@ not "station-measured."
   [slug]`), built with `next/og` at zero added infrastructure, for dropping
   into a bid, report, or email — see the "Download briefing card" button on
   the dashboard.
-- **AI observational brief:** Gemini 2.5 Flash (free tier) reads the night's
-  verified telemetry and the deterministic flags, and writes a grounded,
+- **AI observational brief:** Gemini Flash-Lite (free tier — primary
+  `gemini-3.5-flash-lite`, falling back to `gemini-3.1-flash-lite` on a
+  retryable error; see `src/lib/ai-models.ts`) reads the night's verified
+  telemetry and the deterministic flags, and writes a grounded,
   non-speculative summary plus an "Ask the analyst" Q&A drawer, strictly
   scoped to that data and instructed to stay consistent with the flags
   rather than inventing its own risk claims.
 - **Exact nightly schedule:** a GitHub Actions cron (not Vercel's jittery
-  Hobby-plan cron) calls `/api/ingest` at 21:00 UTC / 22:00 WAT every night.
+  Hobby-plan cron) calls `/api/ingest` at 22:59 UTC / 23:59 WAT every night,
+  capturing the full 00:00-23:59 WAT day in one pass.
+- **CSV/Excel export:** an "Export data" button on the dashboard (next to
+  "Download briefing card") opens a panel to download observed telemetry for
+  a chosen date range, in either CSV or XLSX, as either hourly raw readings
+  or daily cluster summaries. Hourly exports cap at 92 days per request,
+  daily exports at 366 days, to keep each request well inside Vercel's
+  Hobby-plan time limit. Built from `src/lib/export-logic.ts` (pure,
+  unit-tested) and served by the public `/api/export` GET endpoint — see
+  `SECURITY.md` for the threat-model entry.
 
 ## Roadmap (deliberately deferred, not in this build)
 
@@ -81,9 +92,6 @@ primary user is Growthly's own B2B pipeline, not a mass public audience:
 - **Multi-day streak detection** (e.g. "3 consecutive drying-risk days") —
   the risk-flag engine currently looks at one elapsed day at a time; a true
   streak detector needs several nights of accumulated history.
-- **Researcher CSV/Excel export** — a 1-click multi-cluster historical
-  accumulation export, useful once there's accumulated history worth
-  exporting.
 
 See [`SECURITY.md`](./SECURITY.md) for the threat model, hardening measures,
 and the automated test suite that exercises them.
@@ -92,8 +100,9 @@ and the automated test suite that exercises them.
 
 ```
 agropulse-ng/
-├── .github/workflows/nightly-ingest.yml   # Exact 22:00 WAT cron trigger
+├── .github/workflows/nightly-ingest.yml   # Exact 23:59 WAT cron trigger
 ├── supabase/schema.sql                    # Tables, RLS policies, 24-cluster seed data
+├── supabase/migrations/                   # Incremental ALTERs for an already-deployed DB
 ├── src/
 │   ├── app/
 │   │   ├── api/ingest/route.ts            # Nightly: fetch Open-Meteo -> flags -> Gemini -> Supabase
@@ -120,8 +129,14 @@ agropulse-ng/
    [`supabase/schema.sql`](./supabase/schema.sql). This creates the three
    tables, enables Row-Level Security with public-read-only policies, and
    seeds all 24 agricultural clusters.
+   - **Already have an AgroPulse NG database from before?** `schema.sql`'s
+     `create table if not exists` won't retroactively widen an existing
+     table's constraints. Also run every file under
+     [`supabase/migrations/`](./supabase/migrations) in order, once, in the
+     SQL Editor — currently just `0001_full_day_ingest_cutoff.sql`, which
+     allows `cutoff_hour_wat` up to 23 instead of 21.
 3. Go to **Database → Replication** (or **Table Editor → daily_observed_reports
-   → Enable Realtime**) so the dashboard updates live at 22:00 WAT without a
+   → Enable Realtime**) so the dashboard updates live at 23:59 WAT without a
    page reload.
 4. Copy three values from **Project Settings → API**:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
@@ -163,15 +178,16 @@ gh repo create agropulse-ng --private --source=. --push
 3. Click **Deploy** and copy the production domain, e.g.
    `https://agropulse-ng.vercel.app`.
 
-### Step 5 — Activate the 22:00 WAT GitHub Actions cron
+### Step 5 — Activate the 23:59 WAT GitHub Actions cron
 
 1. In the GitHub repo: **Settings → Secrets and variables → Actions → New
    repository secret**, and add:
    - `VERCEL_APP_URL` — your Vercel domain, **no trailing slash**
    - `CRON_SECRET` — the exact same value you set in Vercel
-2. Go to the **Actions** tab → **Nightly 2200 WAT Observed Weather
+2. Go to the **Actions** tab → **Nightly 2359 WAT Observed Weather
    Ingestion** → **Run workflow** to populate today's telemetry immediately.
-   From then on it runs automatically every night at 21:00 UTC (22:00 WAT).
+   From then on it runs automatically every night at 22:59 UTC (23:59 WAT),
+   capturing the full day.
 
 ## Troubleshooting
 
@@ -190,7 +206,14 @@ expand the `[ingest] hourly upsert failed:` line). The two most common
 causes on a first deploy: `supabase/schema.sql` was never fully run in the
 Supabase SQL Editor (so `observed_hourly` doesn't exist), or
 `SUPABASE_SERVICE_ROLE_KEY` in Vercel is actually the anon/public key
-instead of the service-role key.
+instead of the service-role key. On an **existing** deployment upgrading to
+the full-day (23:59 WAT) schedule, the log line to look for is
+`[ingest] report upsert failed:` with a `cutoff_hour_wat_check` constraint
+violation — it means
+[`supabase/migrations/0001_full_day_ingest_cutoff.sql`](./supabase/migrations/0001_full_day_ingest_cutoff.sql)
+was never run, so the old `between 0 and 21` constraint is still rejecting
+hour 22/23. Run that migration once in the SQL Editor and the next ingest
+succeeds.
 
 **The nightly AI brief shows "the AI synthesis step did not complete," or
 the in-app analyst chat says "temporarily unavailable"** — The ingestion and

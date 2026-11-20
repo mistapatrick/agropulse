@@ -72,6 +72,6 @@ export function buildChatSystemPrompt(report: DailyObservedReport | null): strin
     "",
     grounding
       ? `OBSERVED_TELEMETRY (JSON, authoritative — the only source of truth):\n${grounding}`
-      : "OBSERVED_TELEMETRY: none yet — no ingestion run has completed. Tell the user to check back after the next 22:00 WAT run.",
+      : "OBSERVED_TELEMETRY: none yet — no ingestion run has completed. Tell the user to check back after the next 23:59 WAT run.",
   ].join("\n");
 }

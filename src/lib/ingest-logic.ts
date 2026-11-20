@@ -38,9 +38,15 @@ export function getLagosDateParts(nowUtc: Date = new Date()): {
   };
 }
 
-/** Never ingest a hour that hasn't elapsed yet. Caps at 21:00 WAT (hour 21). */
+/**
+ * Never ingest an hour that hasn't elapsed yet. Caps at 23:00 WAT (hour 23) —
+ * the full day — now that the nightly run fires at 23:59 WAT. The clamp is
+ * still worth keeping (rather than trusting the caller) because a manual
+ * `workflow_dispatch` backfill run can fire at any hour of the day, when
+ * `currentHour` is well under 23.
+ */
 export function getCutoffHour(currentHour: number): number {
-  return Math.max(0, Math.min(currentHour, 21));
+  return Math.max(0, Math.min(currentHour, 23));
 }
 
 export function buildOpenMeteoUrl(clusters: ClusterRow[]): string {

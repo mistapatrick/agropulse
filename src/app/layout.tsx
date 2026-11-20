@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AgroPulse NG | Growthly Nexus Solutions",
   description:
-    "Continuously animated observed weather telemetry across 24 Nigerian agricultural clusters, updated nightly at 22:00 WAT. A Growthly Nexus Solutions data product.",
+    "Continuously animated observed weather telemetry across 24 Nigerian agricultural clusters, updated nightly at 23:59 WAT. A Growthly Nexus Solutions data product.",
 };
 
 export const viewport: Viewport = {

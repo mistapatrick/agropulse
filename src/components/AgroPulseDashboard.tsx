@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { AgroPulseLogo } from "./AgroPulseLogo";
 import { AgentBriefPanel } from "./AgentBriefPanel";
+import { ExportPanel } from "./ExportPanel";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { GEO_ZONES, type ClusterMetrics, type DailyObservedReport, type RiskFlagSeverity } from "@/lib/types";
 
@@ -85,9 +86,9 @@ export default function AgroPulseDashboard({
   const [activeHour, setActiveHour] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
 
-  const maxHour = report?.cutoff_hour_wat ?? 21;
+  const maxHour = report?.cutoff_hour_wat ?? 23;
 
-  // Live Supabase Realtime subscription for automatic 22:00 WAT refresh.
+  // Live Supabase Realtime subscription for automatic 23:59 WAT refresh.
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
@@ -152,7 +153,7 @@ export default function AgroPulseDashboard({
       <div className="flex min-h-screen flex-col items-center justify-center bg-brand-white p-6 text-center">
         <AgroPulseLogo className="mb-4" />
         <p className="text-sm text-brand-ink-soft">
-          Awaiting initial 22:00 WAT observational telemetry run...
+          Awaiting initial 23:59 WAT observational telemetry run...
         </p>
       </div>
     );
@@ -235,6 +236,7 @@ export default function AgroPulseDashboard({
                 <ImageDown className="h-3.5 w-3.5" />
                 Download briefing card
               </a>
+              <ExportPanel latestObsDate={report.obs_date} />
               <select
                 value={selectedZone}
                 onChange={(e) => setSelectedZone(e.target.value)}
